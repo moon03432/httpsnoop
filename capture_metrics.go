@@ -91,6 +91,24 @@ func (m *Metrics) CaptureMetrics(w http.ResponseWriter, fn func(http.ResponseWri
 	fn(Wrap(w, hooks))
 }
 
+// CaptureMetricsAndBody wraps the given hnd, executes it with the given w and r, and
+// returns the metrics it captured from it.
+func CaptureMetricsAndBody(hnd http.Handler, w http.ResponseWriter, r *http.Request) Metrics {
+	return CaptureMetricsAndBodyFn(w, func(ww http.ResponseWriter) {
+		hnd.ServeHTTP(ww, r)
+	})
+}
+
+// CaptureMetricsAndBodyFn wraps w and calls fn with the wrapped w and returns the
+// resulting metrics. This is very similar to CaptureMetrics (which is just
+// sugar on top of this func), but is a more usable interface if your
+// application doesn't use the Go http.Handler interface.
+func CaptureMetricsAndBodyFn(w http.ResponseWriter, fn func(http.ResponseWriter)) Metrics {
+	m := Metrics{Code: http.StatusOK}
+	m.CaptureMetricsAndBody(w, fn)
+	return m
+}
+
 // CaptureMetricsAndBody wraps w and calls fn with the wrapped w and updates
 // Metrics m with the resulting metrics. This is similar to CaptureMetricsFn,
 // but allows one to customize starting Metrics object.
