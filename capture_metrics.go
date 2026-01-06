@@ -50,6 +50,54 @@ func (m *Metrics) CaptureMetrics(w http.ResponseWriter, fn func(http.ResponseWri
 	var (
 		start         = time.Now()
 		headerWritten bool
+		hooks         = Hooks{
+			WriteHeader: func(next WriteHeaderFunc) WriteHeaderFunc {
+				return func(code int) {
+					next(code)
+
+					if !(code >= 100 && code <= 199) && !headerWritten {
+						m.Code = code
+						headerWritten = true
+					}
+				}
+			},
+
+			Write: func(next WriteFunc) WriteFunc {
+				return func(p []byte) (int, error) {
+					n, err := next(p)
+
+					m.Written += int64(n)
+					headerWritten = true
+					return n, err
+				}
+			},
+
+			ReadFrom: func(next ReadFromFunc) ReadFromFunc {
+				return func(src io.Reader) (int64, error) {
+					n, err := next(src)
+
+					headerWritten = true
+					m.Written += n
+					return n, err
+				}
+			},
+		}
+	)
+
+	// defer to ensure duration is updated even if the handler panics
+	defer func() {
+		m.Duration += time.Since(start)
+	}()
+	fn(Wrap(w, hooks))
+}
+
+// CaptureMetricsAndBody wraps w and calls fn with the wrapped w and updates
+// Metrics m with the resulting metrics. This is similar to CaptureMetricsFn,
+// but allows one to customize starting Metrics object.
+func (m *Metrics) CaptureMetricsAndBody(w http.ResponseWriter, fn func(http.ResponseWriter)) {
+	var (
+		start         = time.Now()
+		headerWritten bool
 		buf           = new(bytes.Buffer)
 		hooks         = Hooks{
 			WriteHeader: func(next WriteHeaderFunc) WriteHeaderFunc {
