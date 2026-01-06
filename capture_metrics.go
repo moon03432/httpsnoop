@@ -2,6 +2,7 @@ package httpsnoop
 
 import (
 	"bytes"
+	"compress/gzip"
 	"io"
 	"net/http"
 	"time"
@@ -155,7 +156,7 @@ func (m *Metrics) CaptureMetricsAndBody(w http.ResponseWriter, fn func(http.Resp
 	// defer to ensure duration is updated even if the handler panics
 	defer func() {
 		m.Duration += time.Since(start)
-		m.ResponseBody = buf.Bytes()
+		m.ResponseBody = DecompressIfNeeded(buf.Bytes())
 	}()
 	fn(Wrap(w, hooks))
 }
@@ -172,4 +173,20 @@ type deadliner interface {
 // here.
 type fullDuplexEnabler interface {
 	EnableFullDuplex() error
+}
+
+func DecompressIfNeeded(data []byte) []byte {
+	// Check for Gzip magic number: 1f 8b
+	if len(data) < 2 || data[0] != 0x1f || data[1] != 0x8b {
+		return data // Not gzipped
+	}
+
+	reader, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return data
+	}
+	defer reader.Close()
+
+	decompressed, _ := io.ReadAll(reader)
+	return decompressed
 }
