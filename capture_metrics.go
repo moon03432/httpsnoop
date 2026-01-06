@@ -1,6 +1,7 @@
 package httpsnoop
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"time"
@@ -20,6 +21,8 @@ type Metrics struct {
 	// are not tracked. Therefor the number of Written bytes will usually match
 	// the size of the response body.
 	Written int64
+	// Bytes
+	ResponseBody []byte
 }
 
 // CaptureMetrics wraps the given hnd, executes it with the given w and r, and
@@ -47,6 +50,7 @@ func (m *Metrics) CaptureMetrics(w http.ResponseWriter, fn func(http.ResponseWri
 	var (
 		start         = time.Now()
 		headerWritten bool
+		buf           = new(bytes.Buffer)
 		hooks         = Hooks{
 			WriteHeader: func(next WriteHeaderFunc) WriteHeaderFunc {
 				return func(code int) {
@@ -61,6 +65,7 @@ func (m *Metrics) CaptureMetrics(w http.ResponseWriter, fn func(http.ResponseWri
 
 			Write: func(next WriteFunc) WriteFunc {
 				return func(p []byte) (int, error) {
+					buf.Write(p)
 					n, err := next(p)
 
 					m.Written += int64(n)
@@ -84,6 +89,7 @@ func (m *Metrics) CaptureMetrics(w http.ResponseWriter, fn func(http.ResponseWri
 	// defer to ensure duration is updated even if the handler panics
 	defer func() {
 		m.Duration += time.Since(start)
+		m.ResponseBody = buf.Bytes()
 	}()
 	fn(Wrap(w, hooks))
 }
